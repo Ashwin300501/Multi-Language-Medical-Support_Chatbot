@@ -27,15 +27,126 @@ if not MISTRAL_API_KEY:
 
 # --- language helpers ---
 _LANG_NAMES = {
-    "en":"English","es":"Spanish","hi":"Hindi","ta":"Tamil","te":"Telugu","ml":"Malayalam","kn":"Kannada",
-    "mr":"Marathi","bn":"Bengali","gu":"Gujarati","pa":"Punjabi","ur":"Urdu","fa":"Persian","ar":"Arabic",
-    "fr":"French","de":"German","it":"Italian","pt":"Portuguese","ru":"Russian","ja":"Japanese",
-    "ko":"Korean","zh-cn":"Chinese (Simplified)","zh-tw":"Chinese (Traditional)","id":"Indonesian",
-    "he":"Hebrew","tr":"Turkish","vi":"Vietnamese","th":"Thai"
+    # --- Common languages ---
+    "af": "Afrikaans",
+    "sq": "Albanian",
+    "am": "Amharic",
+    "ar": "Arabic",
+    "hy": "Armenian",
+    "az": "Azerbaijani",
+    "eu": "Basque",
+    "be": "Belarusian",
+    "bn": "Bengali",
+    "bs": "Bosnian",
+    "bg": "Bulgarian",
+    "ca": "Catalan",
+    "ceb": "Cebuano",
+    "ny": "Chichewa",
+    "zh-cn": "Chinese (Simplified)",
+    "zh-tw": "Chinese (Traditional)",
+    "co": "Corsican",
+    "hr": "Croatian",
+    "cs": "Czech",
+    "da": "Danish",
+    "nl": "Dutch",
+    "en": "English",
+    "eo": "Esperanto",
+    "et": "Estonian",
+    "tl": "Filipino",
+    "fi": "Finnish",
+    "fr": "French",
+    "fy": "Frisian",
+    "gl": "Galician",
+    "ka": "Georgian",
+    "de": "German",
+    "el": "Greek",
+    "gu": "Gujarati",
+    "ht": "Haitian Creole",
+    "ha": "Hausa",
+    "haw": "Hawaiian",
+    "iw": "Hebrew",
+    "he": "Hebrew",
+    "hi": "Hindi",
+    "hmn": "Hmong",
+    "hu": "Hungarian",
+    "is": "Icelandic",
+    "ig": "Igbo",
+    "id": "Indonesian",
+    "ga": "Irish",
+    "it": "Italian",
+    "ja": "Japanese",
+    "jw": "Javanese",
+    "kn": "Kannada",
+    "kk": "Kazakh",
+    "km": "Khmer",
+    "rw": "Kinyarwanda",
+    "ko": "Korean",
+    "ku": "Kurdish (Kurmanji)",
+    "ky": "Kyrgyz",
+    "lo": "Lao",
+    "la": "Latin",
+    "lv": "Latvian",
+    "lt": "Lithuanian",
+    "lb": "Luxembourgish",
+    "mk": "Macedonian",
+    "mg": "Malagasy",
+    "ms": "Malay",
+    "ml": "Malayalam",
+    "mt": "Maltese",
+    "mi": "Maori",
+    "mr": "Marathi",
+    "mn": "Mongolian",
+    "my": "Myanmar (Burmese)",
+    "ne": "Nepali",
+    "no": "Norwegian",
+    "or": "Odia (Oriya)",
+    "ps": "Pashto",
+    "fa": "Persian",
+    "pl": "Polish",
+    "pt": "Portuguese",
+    "pa": "Punjabi",
+    "ro": "Romanian",
+    "ru": "Russian",
+    "sm": "Samoan",
+    "gd": "Scots Gaelic",
+    "sr": "Serbian",
+    "st": "Sesotho",
+    "sn": "Shona",
+    "sd": "Sindhi",
+    "si": "Sinhala",
+    "sk": "Slovak",
+    "sl": "Slovenian",
+    "so": "Somali",
+    "es": "Spanish",
+    "su": "Sundanese",
+    "sw": "Swahili",
+    "sv": "Swedish",
+    "tg": "Tajik",
+    "ta": "Tamil",
+    "tt": "Tatar",
+    "te": "Telugu",
+    "th": "Thai",
+    "tr": "Turkish",
+    "tk": "Turkmen",
+    "uk": "Ukrainian",
+    "ur": "Urdu",
+    "ug": "Uyghur",
+    "uz": "Uzbek",
+    "vi": "Vietnamese",
+    "cy": "Welsh",
+    "xh": "Xhosa",
+    "yi": "Yiddish",
+    "yo": "Yoruba",
+    "zu": "Zulu",
 }
 
 def language_name(code: str) -> str:
-    return _LANG_NAMES.get(code.lower(), code)
+    if not code:
+        return "Unknown"
+    code = code.lower()
+    mapping = {"zh-cn": "zh-cn", "zh-tw": "zh-tw", "iw": "he", "in": "id"}
+    normalized = mapping.get(code, code)
+    return _LANG_NAMES.get(normalized, _LANG_NAMES.get(code.split("-")[0], "Unknown"))
 
 def normalize_lang(code: str) -> str:
     mapping = {"zh-cn": "zh-CN", "zh-tw": "zh-TW", "iw": "he", "in": "id"}
@@ -66,12 +177,12 @@ vectorstore = PineconeVectorStore.from_existing_index(
     embedding=embeddings,
 )
 
-retriever = vectorstore.as_retriever(search_kwargs={"k": 3})
+retriever = vectorstore.as_retriever(search_kwargs={"k": 5})
 
 SYSTEM_PROMPT = (
-    "You are a careful, multilingual medical support assistant.\n"
-    "Answer ONLY using the provided context; if the answer is not in the context, say you don't know.\n"
-    "Be concise and clear. Include a short safety disclaimer at the end."
+        "You are a careful medical assistant. Answer ONLY from the context.\n"
+        "If unsure, say you don't know. Keep the answer concise and patient-friendly.\n"
+        "Be concise and clear. Include a short safety disclaimer at the end."
 )
 
 def _format_context(docs):
