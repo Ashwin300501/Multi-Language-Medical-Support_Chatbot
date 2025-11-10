@@ -1,19 +1,9 @@
-# --- Core LangChain Packages (Recommended Modern Structure) ---
-# Main LangChain package (v1.0.x is stable)
-langchain>=1.0.0
-# Core abstractions (v1.0.x is stable)
-langchain-core>=1.0.0
-# Common third-party integrations (Use the latest stable < 1.0.0)
-langchain-community
-
-# --- Integrations (Using the new naming convention) ---
-# OpenAI models (Remove version requirement to install latest compatible)
-langchain-openai
-# Pinecone vector database (Remove version requirement to install latest compatible)
-langchain-pinecone
-
-# --- Other Required Libraries ---
-pypdf>=5.6.1
-python-dotenv>=1.1.0
-sentence-transformers>=4.1.0
 streamlit
+python-dotenv
+langdetect
+deep-translator
+mistralai
+langchain-huggingface
+langchain-pinecone
+pinecone-client
+torch
