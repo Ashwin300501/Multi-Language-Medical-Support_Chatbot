@@ -8,6 +8,9 @@ from mistralai import Mistral
 from langchain_huggingface import HuggingFaceEmbeddings
 from langchain_pinecone import PineconeVectorStore
 from pinecone import Pinecone
+import time
+
+import streamlit as st
 
 load_dotenv()
 DetectorFactory.seed = 0
@@ -79,21 +82,45 @@ def _format_context(docs):
         parts.append(f"{snippet}\n[source: {src}]")
     return "\n\n".join(parts)
 
-def ask_mistral_with_context(question_en: str, docs) -> str:
+MODEL_CANDIDATES = [
+    os.getenv("MISTRAL_MODEL", "mistral-small-latest"),
+    "open-mixtral-8x7b",
+    "mistral-small-latest",
+]
+
+def ask_mistral_with_context(question_en: str, docs) -> tuple[str, str]:
     context = _format_context(docs)
-    with Mistral(api_key=MISTRAL_API_KEY) as client:
-        resp = client.chat.complete(
-            model=MODEL_NAME,
-            messages=[
-                {"role": "system", "content": SYSTEM_PROMPT},
-                {
-                    "role": "user",
-                    "content": f"Question: {question_en}\n\nContext:\n{context}\n\nAnswer:"
-                },
-            ],
-            stream=False,
-        )
-    return resp.choices[0].message.content.strip()
+    messages = [
+        {"role": "system", "content": SYSTEM_PROMPT},
+        {
+            "role": "user",
+            "content": f"Question: {question_en}\n\nContext:\n{context}\n\nAnswer:"
+        },
+    ]
+
+    max_attempts_per_model = 3
+    base_delay = 1.0  # seconds
+    last_err = None
+
+    for model_name in MODEL_CANDIDATES:
+        for attempt in range(1, max_attempts_per_model + 1):
+            try:
+                with Mistral(api_key=MISTRAL_API_KEY) as client:
+                    resp = client.chat.complete(
+                        model=model_name,
+                        messages=messages,
+                        stream=False,
+                    )
+                return resp.choices[0].message.content.strip(), model_name
+            except Exception as e:
+                err_msg = str(e).lower()
+                last_err = e
+                if "429" in err_msg or "capacity" in err_msg or "rate" in err_msg:
+                    time.sleep(base_delay * (2 ** (attempt - 1)))  # backoff
+                    continue
+                break  # move to next model if not a retryable error
+
+    raise RuntimeError(f"Mistral request failed across models; last error: {last_err}")
 
 def answer_user_query(user_text: str, k: int = 3):
     # 1) Detect & translate to English
@@ -104,26 +131,67 @@ def answer_user_query(user_text: str, k: int = 3):
     # 2) Retrieve top-k context
     docs = retriever.invoke(q_en)
 
-    # 3) LLM answer in English
-    answer_en = ask_mistral_with_context(q_en, docs)
+    # 3) LLM answer in English + which model produced it
+    answer_en, model_used = ask_mistral_with_context(q_en, docs)
 
     # 4) Translate back to user's language
     answer_user_lang = translate(answer_en, target=src_norm, source="en")
 
-    # 5) Minimal sources for UI
-    sources = [
-        {
-            "source": d.metadata.get("source", "unknown"),
-            "preview": (d.page_content[:180].replace("\n", " ") + ("..." if len(d.page_content) > 180 else ""))
-        }
-        for d in docs
-    ]
-    return answer_user_lang, sources
+    # 5) Return final answer + useful details (no sources)
+    extras = {
+        "detected_lang_code": src_norm,
+        "detected_lang_name": language_name(src_norm),
+        "question_en": q_en,
+        "answer_en": answer_en,
+        "model_used": model_used,
+    }
+    return answer_user_lang, extras
 
-if __name__ == "__main__":
-    sample_q = "what is hypertension?"
-    ans, srcs = answer_user_query(sample_q)
-    print("Answer:\n", ans)
-    print("\nSources:")
-    for s in srcs:
-        print("-", s["source"], ":", s["preview"])
+
+# === Streamlit UI ===
+st.set_page_config(page_title="🩺 Multilingual Medical Support Chatbot", page_icon="🩺", layout="centered")
+st.title("🩺 Multilingual Medical Support Chatbot")
+st.caption("Educational support only — not a substitute for professional medical advice.")
+
+# chat history
+if "history" not in st.session_state:
+    st.session_state.history = []
+
+# render past messages
+for role, content in st.session_state.history:
+    with st.chat_message(role):
+        st.markdown(content)
+
+# input
+user_text = st.chat_input("Ask your medical question in any language…")
+if user_text:
+    st.session_state.history.append(("user", user_text))
+    with st.chat_message("user"):
+        st.markdown(user_text)
+
+    with st.chat_message("assistant"):
+        placeholder = st.empty()
+        placeholder.write("Thinking…")
+        try:
+            final_answer, extras = answer_user_query(user_text)
+        except Exception as e:
+            final_answer = f"Sorry, I hit an error: `{e}`"
+            extras = None
+
+        # Main assistant reply (translated to user's language)
+        placeholder.markdown(final_answer)
+
+        # Details expander: language, translations, model
+        if extras:
+            with st.expander("🔎 Details (language, translations, model)"):
+                st.write(f"**Detected language:** {extras['detected_lang_name']}  \n`{extras['detected_lang_code']}`")
+                st.write(f"**Model used:** {extras['model_used']}")
+                st.markdown("**Input translated to English:**")
+                st.code(extras["question_en"])
+                st.markdown("**Assistant answer in English:**")
+                st.code(extras["answer_en"])
+
+        st.caption("⚠️ Educational information only. Not medical advice. For symptoms or emergencies, seek professional care.")
+
+    # limit history length
+    st.session_state.history = st.session_state.history[-10:]
