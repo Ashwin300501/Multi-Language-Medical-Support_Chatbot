@@ -167,7 +167,10 @@ def translate(text: str, target: str, source: str = "auto") -> str:
         return text
     
 EMBEDDING_MODEL = "BAAI/bge-small-en-v1.5"
-embeddings = HuggingFaceEmbeddings(model_name=EMBEDDING_MODEL)
+embeddings = HuggingFaceEmbeddings(
+    model_name=EMBEDDING_MODEL,
+    model_kwargs={"device": "cpu"},   # force CPU, avoid meta device issues
+)
 
 pc = Pinecone(api_key=PINECONE_API_KEY)
 INDEX_NAME = "medical-chatbot"
