@@ -6,4 +6,6 @@ mistralai
 langchain-huggingface
 langchain-pinecone
 pinecone-client
-torch
+transformers==4.41.2
+huggingface-hub==0.24.6
+sentence-transformers==2.2.2
