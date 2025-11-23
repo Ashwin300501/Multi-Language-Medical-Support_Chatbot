@@ -57,4 +57,4 @@ Deployed on **AWS EC2** with **Nginx**.
 
 ---
 
-Now visit : http://medi-bot.duckdns.org/
+Now visit : https://medi-bot.duckdns.org/
