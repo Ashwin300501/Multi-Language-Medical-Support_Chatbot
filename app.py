@@ -10,6 +10,12 @@ from langchain_pinecone import PineconeVectorStore
 from pinecone import Pinecone
 import time
 
+import re
+
+import fasttext
+
+model = fasttext.load_model("https://dl.fbaipublicfiles.com/fasttext/supervised-models/lid.176.ftz")
+
 import streamlit as st
 
 load_dotenv()
@@ -153,8 +159,48 @@ def normalize_lang(code: str) -> str:
     return mapping.get(code.lower(), code.lower())
 
 def detect_lang(text: str) -> str:
+    """
+    Improved language detection:
+    - If the text is short AND looks like common English small-talk, force 'en'
+    - Otherwise, fall back to langdetect
+    """
+    t = (text or "").strip()
+    t_lower = t.lower()
+
+    # Common English small-talk / greeting words/phrases
+    english_small_talk = [
+        "hi",
+        "hello",
+        "hey",
+        "good morning",
+        "good afternoon",
+        "good evening",
+        "how are you",
+        "how r you",
+        "how are u",
+        "how r u",
+        "whats up",
+        "what's up",
+        "how's it going",
+        "hows it going",
+        "ok thanks",
+        "okay thanks",
+        "thank you",
+        "thanks",
+        "thank u",
+    ]
+
+    # If it's short, made of basic ASCII, AND contains an English small-talk phrase → force English
+    if (
+        len(t) <= 30
+        and re.fullmatch(r"[A-Za-z0-9\s'?.,!]+", t)
+        and any(kw in t_lower for kw in english_small_talk)
+    ):
+        return "en"
+
+    # Otherwise do normal detection
     try:
-        return detect(text) or "en"
+        return detect(t) or "en"
     except Exception:
         return "en"
 
@@ -181,9 +227,11 @@ vectorstore = PineconeVectorStore.from_existing_index(
 retriever = vectorstore.as_retriever(search_kwargs={"k": 5})
 
 SYSTEM_PROMPT = (
-        "You are a careful medical assistant. Answer ONLY from the context.\n"
-        "If unsure, say you don't know. Keep the answer concise and patient-friendly.\n"
-        "Be concise and clear. Include a short safety disclaimer at the end."
+        "You are a careful medical assistant. Answer ONLY from the provided medical context.\n"
+    "If unsure, say you don't know. Keep the answer concise and patient-friendly.\n"
+    "If the user's question is clearly not about health or medicine (sports, celebrities, geography, history, etc.), "
+    "explain briefly that you are a medical chatbot and cannot answer non-medical questions.\n"
+    "Give a brief medical disclaimer at the end."
 )
 
 def _format_context(docs):
@@ -234,22 +282,61 @@ def ask_mistral_with_context(question_en: str, docs) -> tuple[str, str]:
 
     raise RuntimeError(f"Mistral request failed across models; last error: {last_err}")
 
+def is_small_talk(text: str) -> bool:
+    if not text:
+        return False
+
+    t = text.lower().strip()
+    for ch in [".", "!", "?", ","]:
+        t = t.replace(ch, "")
+
+    greeting_keywords = [
+        "hi", "hello", "hey", "good morning", "good afternoon", "good evening",
+        "how are you", "how r you", "how are u", "how r u",
+        "what's up", "whats up", "how's it going", "hows it going",
+    ]
+
+    thanks_keywords = [
+        "thank you", "thanks", "thank u", "ok thanks", "okay thanks"
+    ]
+
+    for kw in greeting_keywords:
+        if t == kw or kw in t:
+            return True
+    for kw in thanks_keywords:
+        if t == kw or t.startswith(kw):
+            return True
+
+    return False
+
 def answer_user_query(user_text: str, k: int = 3):
-    # 1) Detect & translate to English
     src_lang = detect_lang(user_text)
     src_norm = normalize_lang(src_lang)
     q_en = translate(user_text, target="en", source=src_norm)
 
-    # 2) Retrieve top-k context
-    docs = retriever.invoke(q_en)
+    # 1) Small-talk handling
+    if is_small_talk(q_en):
+        answer_en = (
+            "I'm just a medical chatbot, but I'm functioning well 😊. "
+            "How can I help you with your health-related questions today?"
+        )
+        answer_user_lang = translate(answer_en, target=src_norm, source="en")
+        extras = {
+            "detected_lang_code": src_norm,
+            "detected_lang_name": language_name(src_norm),
+            "question_en": q_en,
+            "answer_en": answer_en,
+            "model_used": "small-talk",
+        }
+        return answer_user_lang, extras
 
-    # 3) LLM answer in English + which model produced it
+    # 2) Regular medical RAG
+    docs = retriever.invoke(q_en)
     answer_en, model_used = ask_mistral_with_context(q_en, docs)
 
-    # 4) Translate back to user's language
+    # 3) Translate back
     answer_user_lang = translate(answer_en, target=src_norm, source="en")
-
-    # 5) Return final answer + useful details (no sources)
+    
     extras = {
         "detected_lang_code": src_norm,
         "detected_lang_name": language_name(src_norm),
@@ -257,6 +344,7 @@ def answer_user_query(user_text: str, k: int = 3):
         "answer_en": answer_en,
         "model_used": model_used,
     }
+
     return answer_user_lang, extras
 
 
