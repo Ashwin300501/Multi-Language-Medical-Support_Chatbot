@@ -1,60 +1,105 @@
 # 🩺 Multilingual Medical Support Chatbot
 
-A lightweight, RAG-style medical Q&A chatbot with **multilingual input/output**, **translation**, and **context-grounded answers**.  
-Built with **Streamlit**, **Mistral** (chat), **Pinecone** (vector search), and **HuggingFace embeddings**.  
-Deployed on **AWS EC2** with **Nginx**.
+A lightweight, retrieval-augmented medical Q&A chatbot with **multilingual input/output**, **automatic translation**, and **context-grounded answers**.  
+Built with **Streamlit**, **Mistral** (chat), **Pinecone** (vector search), and **HuggingFace embeddings**.
 
-> ⚠️ **Medical safety notice**: This app is for educational support only and **not** a substitute for professional medical advice, diagnosis, or treatment.
+> ⚠️ **Medical safety notice**  
+> This app is for **educational support only** and is **not** a substitute for professional medical advice, diagnosis, or treatment.
 
 ---
 
 ## ✨ Features
 
-- **Ask in 90+ languages** → auto-detect language → translate to English → ground answers with your docs → translate back
-- **Retrieval-Augmented Generation (RAG)** with Pinecone (uses your existing index)
-- **Model fallback & retry** for free-tier capacity errors (e.g., 429)
-- Streamlit **chat UI** showing:
-  - Detected language (code + readable name)
-  - **User input translated to English**
-  - **Assistant’s English answer**
-  - **Which model produced the answer**
+- **Multilingual Q&A (16 languages)**  
+  Automatically detects the language of the user’s question, translates it to English, answers using medical context, and translates the answer back.
+
+  Supported languages: en, hi, ta, te, ml, kn, mr, bn, gu, ur, es, fr, de, ar, zh-cn, ja.
+
+- **Medical-only behavior**  
+  - Answers only health-related questions.  
+  - Politely refuses non-medical questions.  
+  - Adds a short medical disclaimer on every reply.
+
+- **Retrieval-Augmented Generation (RAG)**  
+  - Uses Pinecone index (`medical-chatbot`).  
+  - Embeddings: `BAAI/bge-small-en-v1.5`.
+
+- **Model fallback & retry logic**  
+  - Primary model: `MISTRAL_MODEL` (from `.env`).  
+  - Fallback order: `[MISTRAL_MODEL] → open-mixtral-8x7b → mistral-small-latest`.
+
+- **Small-talk detection**  
+  - Short greetings (hi, hello, thanks) handled smartly.
+
+- **Streamlit chat UI**  
+  - Chat history  
+  - Shows detected language, translated question, English answer, and model used.
 
 ---
 
-## 🧱 Architecture (high level)
+## 🧱 Architecture
 
-1. **User message** (any language)  
-2. `langdetect` → detect language code  
-3. `deep-translator` → translate to English  
-4. Pinecone retriever (`k=5`) over your existing index (`BAAI/bge-small-en-v1.5`)  
-5. **Mistral** model generates answer **only from context** (system prompt enforces) with **retry + fallback**  
-6. Translate answer back to user’s language  
-7. Streamlit shows answer + language details + model used
+1. Detect language  
+2. Translate → English  
+3. Retrieve medical context from Pinecone  
+4. Mistral ChatCompletion with safety prompt  
+5. Translate back to user language  
+6. Show result + disclaimer
 
 ---
 
-## 🗂️ Repo structure (key files)
+## 🗂️ Repo Structure
 
 ```
 .
-├─ app.py                     # Streamlit app (UI + pipeline)
-├─ requirements.txt           # Python deps
-├─ .env                       # (optional) local dev secrets
-├─ .streamlit/config.toml     # Headless server settings
-└─ Data/                      # (optional) PDFs used to build the index
+├─ app.py
+├─ requirements.txt
+├─ .env
+├─ .streamlit/
+│   └─ config.toml
+└─ Data/
 ```
 
 ---
 
-## 🧰 Tech stack
+## 🔑 Environment Variables
 
-- **Frontend / App**: Streamlit
-- **LLM**: Mistral (`mistral-small-latest`, fallback `open-mixtral-8x7b`)
-- **Vector DB**: Pinecone
-- **Embeddings**: `BAAI/bge-small-en-v1.5` (HuggingFace)
-- **Language**: `langdetect`, `deep-translator` (Google)
-- **Infra**: AWS EC2, Nginx.
+```
+PINECONE_API_KEY=
+MISTRAL_API_KEY=
+INDEX_NAME=medical-chatbot
+MISTRAL_MODEL=mistral-small-latest
+```
 
 ---
 
-Now visit : https://medi-bot.duckdns.org/
+## ▶️ Running Locally
+
+```
+pip install -r requirements.txt
+streamlit run app.py
+```
+
+---
+
+## ☁️ Deployment Notes (AWS EC2)
+
+- Runs via systemd service  
+- Reverse-proxied through Nginx  
+- HTTPS via Certbot + Let’s Encrypt
+
+---
+
+## ⚠️ Limitations
+
+- Not a replacement for medical professionals  
+- Accuracy depends on your Pinecone index  
+- Only supports the listed languages  
+
+---
+
+## 🚀 Future Enhancements
+
+- Add more languages  
+- Add FAQ section  
+- Add minor symptom forms  
