@@ -12,10 +12,6 @@ import time
 
 import re
 
-import fasttext
-
-model = fasttext.load_model("https://dl.fbaipublicfiles.com/fasttext/supervised-models/lid.176.ftz")
-
 import streamlit as st
 
 load_dotenv()
@@ -158,47 +154,71 @@ def normalize_lang(code: str) -> str:
     mapping = {"zh-cn": "zh-CN", "zh-tw": "zh-TW", "iw": "he", "in": "id"}
     return mapping.get(code.lower(), code.lower())
 
+# Only support a subset of popular languages
+POPULAR_LANG_CODES = [
+    "en",      # English
+    "hi",      # Hindi
+    "ta",      # Tamil
+    "te",      # Telugu
+    "ml",      # Malayalam
+    "kn",      # Kannada
+    "mr",      # Marathi
+    "bn",      # Bengali
+    "gu",      # Gujarati
+    "ur",      # Urdu
+    "es",      # Spanish
+    "fr",      # French
+    "de",      # German
+    "ar",      # Arabic
+    "zh-cn",   # Chinese (Simplified)
+    "ja",      # Japanese
+]
+POPULAR_LANG_CODES_LOWER = {c.lower() for c in POPULAR_LANG_CODES}
+
+# common English small-talk / greeting phrases
+_ENGLISH_SMALL_TALK = [
+    "hi",
+    "hello",
+    "hey",
+    "good morning",
+    "good afternoon",
+    "good evening",
+    "how are you",
+    "how r you",
+    "how are u",
+    "how r u",
+    "whats up",
+    "what's up",
+    "how's it going",
+    "hows it going",
+    "ok thanks",
+    "okay thanks",
+    "thank you",
+    "thanks",
+    "thank u",
+]
+
 def detect_lang(text: str) -> str:
     """
     Improved language detection:
-    - If the text is short AND looks like common English small-talk, force 'en'
-    - Otherwise, fall back to langdetect
+    - If the text is short and clearly looks like English small-talk, force 'en'
+    - Otherwise, use langdetect
     """
     t = (text or "").strip()
+    if not t:
+        return "en"
+
     t_lower = t.lower()
 
-    # Common English small-talk / greeting words/phrases
-    english_small_talk = [
-        "hi",
-        "hello",
-        "hey",
-        "good morning",
-        "good afternoon",
-        "good evening",
-        "how are you",
-        "how r you",
-        "how are u",
-        "how r u",
-        "whats up",
-        "what's up",
-        "how's it going",
-        "hows it going",
-        "ok thanks",
-        "okay thanks",
-        "thank you",
-        "thanks",
-        "thank u",
-    ]
-
-    # If it's short, made of basic ASCII, AND contains an English small-talk phrase → force English
+    # If it's short, ASCII-ish, and matches English small-talk phrases → force English
     if (
-        len(t) <= 30
+        len(t) <= 40
         and re.fullmatch(r"[A-Za-z0-9\s'?.,!]+", t)
-        and any(kw in t_lower for kw in english_small_talk)
+        and any(kw in t_lower for kw in _ENGLISH_SMALL_TALK)
     ):
         return "en"
 
-    # Otherwise do normal detection
+    # Otherwise fall back to langdetect
     try:
         return detect(t) or "en"
     except Exception:
@@ -310,11 +330,34 @@ def is_small_talk(text: str) -> bool:
     return False
 
 def answer_user_query(user_text: str, k: int = 3):
-    src_lang = detect_lang(user_text)
-    src_norm = normalize_lang(src_lang)
-    q_en = translate(user_text, target="en", source=src_norm)
+    raw = (user_text or "").strip()
 
-    # 1) Small-talk handling
+    # 0) Detect language of original input
+    src_lang = detect_lang(raw)
+    src_norm = normalize_lang(src_lang)
+
+    # 0.5) Enforce popular language whitelist
+    if src_norm.lower() not in POPULAR_LANG_CODES_LOWER:
+        supported_list = ", ".join(sorted({language_name(c) for c in POPULAR_LANG_CODES}))
+        answer_en = (
+            f"Sorry, I currently support only these languages: {supported_list}.\n"
+            "Please ask your question in one of these languages."
+        )
+        # Keep reply in English so it's understandable even if detection was weird
+        answer_user_lang = answer_en
+        extras = {
+            "detected_lang_code": src_norm,
+            "detected_lang_name": language_name(src_norm),
+            "question_en": raw,
+            "answer_en": answer_en,
+            "model_used": "language-not-supported",
+        }
+        return answer_user_lang, extras
+
+    # 1) Translate to English
+    q_en = translate(raw, target="en", source=src_norm)
+
+    # 2) Small-talk handling (on English version)
     if is_small_talk(q_en):
         answer_en = (
             "I'm just a medical chatbot, but I'm functioning well 😊. "
@@ -330,11 +373,11 @@ def answer_user_query(user_text: str, k: int = 3):
         }
         return answer_user_lang, extras
 
-    # 2) Regular medical RAG
+    # 3) Regular medical RAG
     docs = retriever.invoke(q_en)
     answer_en, model_used = ask_mistral_with_context(q_en, docs)
 
-    # 3) Translate back
+    # 4) Translate back
     answer_user_lang = translate(answer_en, target=src_norm, source="en")
     
     extras = {
