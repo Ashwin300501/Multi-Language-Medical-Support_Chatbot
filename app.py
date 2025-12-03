@@ -392,49 +392,57 @@ def answer_user_query(user_text: str, k: int = 3):
 
 
 # === Streamlit UI ===
-st.set_page_config(page_title="🩺 Multilingual Medical Support Chatbot", page_icon="🩺", layout="centered")
-st.title("🩺 Multilingual Medical Support Chatbot")
-st.caption("Educational support only — not a substitute for professional medical advice.")
 
-# chat history
-if "history" not in st.session_state:
-    st.session_state.history = []
+def main():
+    st.set_page_config(page_title="🩺 Multilingual Medical Support Chatbot", page_icon="🩺", layout="centered")
+    st.title("🩺 Multilingual Medical Support Chatbot")
+    st.caption("Educational support only — not a substitute for professional medical advice.")
 
-# render past messages
-for role, content in st.session_state.history:
-    with st.chat_message(role):
-        st.markdown(content)
+    # chat history
+    if "history" not in st.session_state:
+        st.session_state.history = []
 
-# input
-user_text = st.chat_input("Ask your medical question in any language…")
-if user_text:
-    st.session_state.history.append(("user", user_text))
-    with st.chat_message("user"):
-        st.markdown(user_text)
+    # render past messages
+    for role, content in st.session_state.history:
+        with st.chat_message(role):
+            st.markdown(content)
 
-    with st.chat_message("assistant"):
-        placeholder = st.empty()
-        placeholder.write("Thinking…")
-        try:
-            final_answer, extras = answer_user_query(user_text)
-        except Exception as e:
-            final_answer = f"Sorry, I hit an error: `{e}`"
-            extras = None
+    # input
+    user_text = st.chat_input("Ask your medical question in any language…")
+    if user_text:
+        st.session_state.history.append(("user", user_text))
+        with st.chat_message("user"):
+            st.markdown(user_text)
 
-        # Main assistant reply (translated to user's language)
-        placeholder.markdown(final_answer)
+        with st.chat_message("assistant"):
+            placeholder = st.empty()
+            placeholder.write("Thinking…")
+            try:
+                final_answer, extras = answer_user_query(user_text)
+            except Exception as e:
+                final_answer = f"Sorry, I hit an error: `{e}`"
+                extras = None
 
-        # Details expander: language, translations, model
-        if extras:
-            with st.expander("🔎 Details (language, translations, model)"):
-                st.write(f"**Detected language:** {extras['detected_lang_name']}  \n`{extras['detected_lang_code']}`")
-                st.write(f"**Model used:** {extras['model_used']}")
-                st.markdown("**Input translated to English:**")
-                st.code(extras["question_en"])
-                st.markdown("**Assistant answer in English:**")
-                st.code(extras["answer_en"])
+            # Main assistant reply (translated to user's language)
+            placeholder.markdown(final_answer)
 
-        st.caption("⚠️ Educational information only. Not medical advice. For symptoms or emergencies, seek professional care.")
+            #stores assistant response in history
+            st.session_state.history.append(("assistant", final_answer))
 
-    # limit history length
-    st.session_state.history = st.session_state.history[-10:]
+            # Details expander: language, translations, model
+            if extras:
+                with st.expander("🔎 Details (language, translations, model)"):
+                    st.write(f"**Detected language:** {extras['detected_lang_name']}  \n`{extras['detected_lang_code']}`")
+                    st.write(f"**Model used:** {extras['model_used']}")
+                    st.markdown("**Input translated to English:**")
+                    st.code(extras["question_en"])
+                    st.markdown("**Assistant answer in English:**")
+                    st.code(extras["answer_en"])
+
+            st.caption("⚠️ Educational information only. Not medical advice. For symptoms or emergencies, seek professional care.")
+
+        # limit history length
+        st.session_state.history = st.session_state.history[-10:]
+
+if __name__ == "__main__":
+    main()
