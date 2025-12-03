@@ -307,11 +307,27 @@ def is_small_talk(text: str) -> bool:
         return False
 
     t = text.lower().strip()
-    for ch in [".", "!", "?", ","]:
-        t = t.replace(ch, "")
+    # remove basic punctuation
+    t_clean = re.sub(r"[.!?,]", "", t)
+
+    # 1) If message looks like it contains a medical query, do NOT treat as small talk
+    medical_keywords = [
+        "pain", "headache", "fever", "cold", "cough", "throat", "stomach",
+        "vomit", "vomiting", "nausea", "dizziness", "breath", "breathing",
+        "bp", "pressure", "sugar", "diabetes", "infection", "tablet",
+        "medicine", "medication", "pill", "dose", "dosage", "rash", "allergy",
+        "injury", "wound", "bleeding", "fracture"
+    ]
+    if any(kw in t_clean for kw in medical_keywords):
+        return False
+
+    # 2) Only treat as small talk if it's short (pure greeting / thanks)
+    if len(t_clean) > 40 or len(t_clean.split()) > 6:
+        return False
 
     greeting_keywords = [
-        "hi", "hello", "hey", "good morning", "good afternoon", "good evening",
+        "hi", "hello", "hey",
+        "good morning", "good afternoon", "good evening",
         "how are you", "how r you", "how are u", "how r u",
         "what's up", "whats up", "how's it going", "hows it going",
     ]
@@ -320,11 +336,9 @@ def is_small_talk(text: str) -> bool:
         "thank you", "thanks", "thank u", "ok thanks", "okay thanks"
     ]
 
-    for kw in greeting_keywords:
-        if t == kw or kw in t:
-            return True
-    for kw in thanks_keywords:
-        if t == kw or t.startswith(kw):
+    # 3) Only match when the whole message is essentially the greeting/thanks
+    for kw in greeting_keywords + thanks_keywords:
+        if t_clean == kw:
             return True
 
     return False
